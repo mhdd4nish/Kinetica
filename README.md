@@ -1,6 +1,8 @@
 # 🧘‍♂️ Mediasoup AI Pose Development Platform
 **A real-time, 3-tier motor development application for children. This system uses WebRTC to stream video to a Mediasoup SFU, which routes raw frames to a Python AI engine for skeletal geometry analysis.**
 
+https://github.com/user-attachments/assets/cbf253b1-91a1-41c2-8476-2163e46e1983
+
 **🚀 System Architecture**
 The project is divided into three main components:
 
@@ -48,4 +50,6 @@ The user interface for the activities and Parent Dashboard.
 * **Advanced Pose Validation:** Implemented dynamic skeletal heuristics (like relative torso-to-hip ratios) within the Python engine to prevent false-positive detections caused by user proximity or varying camera angles.
 * **Parent Dashboard:** A password-protected interface using the **Repository Pattern** and offline storage to track session history and child progress metrics.
 * **Low-Latency Pipeline:** Real-time VP8 depacketization via UDP sockets to ensure sub-100ms feedback loops.
+
+<img width="1919" height="869" alt="Screenshot 2026-04-02 215420" src="https://github.com/user-attachments/assets/7ae630f4-9a57-4f76-8748-7a91d26e3bc7" />
 
