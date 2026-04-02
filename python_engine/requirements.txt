@@ -1,0 +1,6 @@
+opencv-python
+mediapipe
+av
+python-socketio[asyncio]
+aiohttp
+numpy

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mediasoup Client Test</title>
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="https://unpkg.com/mediasoup-client@3/build/mediasoup-client.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    video {
+      width: 100%;
+      max-width: 640px;
+      background: #000;
+      border-radius: 8px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px 5px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .log {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>mediasoup Client Test</h1>
+  
+  <div>
+    <button onclick="init()">Initialize</button>
+    <button onclick="startCamera()">Start Camera</button>
+    <button onclick="produce()">Produce Media</button>
+    <button onclick="disconnect()">Disconnect</button>
+  </div>
+
+  <div>
+    <h3>Local Video</h3>
+    <video id="localVideo" autoplay muted playsinline></video>
+  </div>
+
+  <div>
+    <h3>Log</h3>
+    <div id="log" class="log"></div>
+  </div>
+
+  <script>
+    let socket;
+    let device;
+    let sendTransport;
+    let localStream;
+    let videoProducer;
+    let audioProducer;
+
+    function log(message) {
+      const logDiv = document.getElementById('log');
+      const timestamp = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(message);
+    }
+
+    async function init() {
+      try {
+        log('Connecting to server...');
+        socket = io('http://localhost:5001');
+
+        socket.on('connect', () => {
+          log('✅ Connected to server: ' + socket.id);
+          initDevice();
+        });
+
+        socket.on('disconnect', () => {
+          log('❌ Disconnected from server');
+        });
+
+      } catch (error) {
+        log('❌ Error: ' + error.message);
+      }
+    }
+
+    async function initDevice() {
+      try {
+        log('Initializing mediasoup device...');
+
+        // Get RTP capabilities
+        const response = await request('getRouterRtpCapabilities');
+        log('✅ Got RTP capabilities');
+
+        // Create device
+        device = new mediasoupClient.Device();
+        await device.load({ routerRtpCapabilities: response.rtpCapabilities });
+        
+        log('✅ Device loaded');
+        log('   Can produce video: ' + device.canProduce('video'));
+        log('   Can produce audio: ' + device.canProduce('audio'));
+
+      } catch (error) {
+        log('❌ Device error: ' + error.message);
+      }
+    }
+
+    async function startCamera() {
+      try {
+        log('Starting camera...');
+
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 },
+          audio: true
+        });
+
+        document.getElementById('localVideo').srcObject = localStream;
+        log('✅ Camera started');
+
+      } catch (error) {
+        log('❌ Camera error: ' + error.message);
+      }
+    }
+
+    async function produce() {
+      try {
+        if (!device) {
+          log('❌ Device not initialized');
+          return;
+        }
+
+        if (!localStream) {
+          log('❌ Camera not started');
+          return;
+        }
+
+        log('Creating send transport...');
+
+        // Create send transport
+        const transportParams = await request('createWebRtcTransport', {
+          direction: 'send'
+        });
+
+        sendTransport = device.createSendTransport(transportParams.params);
+        log('✅ Send transport created: ' + sendTransport.id);
+
+        // Handle 'connect' event
+        sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+          try {
+            log('Connecting transport...');
+            await request('connectTransport', {
+              transportId: sendTransport.id,
+              dtlsParameters
+            });
+            log('✅ Transport connected');
+            callback();
+          } catch (error) {
+            log('❌ Connect error: ' + error.message);
+            errback(error);
+          }
+        });
+
+        // Handle 'produce' event
+        sendTransport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+          try {
+            log(`Producing ${kind}...`);
+            const { id } = await request('produce', {
+              transportId: sendTransport.id,
+              kind,
+              rtpParameters
+            });
+            log(`✅ Producer created: ${id}`);
+            callback({ id });
+          } catch (error) {
+            log('❌ Produce error: ' + error.message);
+            errback(error);
+          }
+        });
+
+        // Produce video
+        const videoTrack = localStream.getVideoTracks()[0];
+        videoProducer = await sendTransport.produce({ track: videoTrack });
+        log('✅ Video producer: ' + videoProducer.id);
+
+        // Produce audio
+        const audioTrack = localStream.getAudioTracks()[0];
+        audioProducer = await sendTransport.produce({ track: audioTrack });
+        log('✅ Audio producer: ' + audioProducer.id);
+
+        log('🎉 All media producing successfully!');
+
+      } catch (error) {
+        log('❌ Produce error: ' + error.message);
+      }
+    }
+
+    function disconnect() {
+      if (videoProducer) {
+        videoProducer.close();
+        log('Video producer closed');
+      }
+      if (audioProducer) {
+        audioProducer.close();
+        log('Audio producer closed');
+      }
+      if (sendTransport) {
+        sendTransport.close();
+        log('Transport closed');
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        log('Camera stopped');
+      }
+      if (socket) {
+        socket.disconnect();
+        log('Socket disconnected');
+      }
+    }
+
+    function request(event, data = {}) {
+      return new Promise((resolve, reject) => {
+        socket.emit(event, data, (response) => {
+          if (response.error) {
+            reject(new Error(response.error));
+          } else {
+            resolve(response);
+          }
+        });
+      });
+    }
+  </script>
+</body>
+</html>
